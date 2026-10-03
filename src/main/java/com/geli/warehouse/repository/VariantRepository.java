@@ -44,4 +44,7 @@ public interface VariantRepository extends JpaRepository<Variant, Long> {
         long getVariantCount();
         long getTotalStock();
     }
+
+    @Query("SELECT v.stock FROM Variant v WHERE v.id = :id")
+    Optional<Integer> findStockById(@Param("id") Long id);
 }
