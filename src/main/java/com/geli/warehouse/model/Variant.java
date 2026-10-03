@@ -3,6 +3,8 @@ package com.geli.warehouse.model;
 
 import jakarta.persistence.*;
 
+import com.geli.warehouse.util.Timestamps;
+
 import java.time.Instant;
 
 @Entity
@@ -49,14 +51,14 @@ public class Variant {
 
     @PrePersist
     void onCreate(){
-        Instant now = Instant.now();
+        Instant now = Timestamps.now();
         this.createdAt = now;
         this.updatedAt = now;
     }
 
     @PreUpdate
     void onUpdate() {
-        this.updatedAt = Instant.now();
+        this.updatedAt = Timestamps.now();
     }
 
     public long effectivePrice(){

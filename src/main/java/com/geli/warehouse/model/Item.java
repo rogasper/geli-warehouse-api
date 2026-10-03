@@ -1,5 +1,7 @@
 package com.geli.warehouse.model;
 
+import com.geli.warehouse.util.Timestamps;
+
 import java.time.Instant;
 
 import jakarta.persistence.*;
@@ -46,14 +48,14 @@ public class Item {
 
     @PrePersist
     void onCreate() {
-        Instant now = Instant.now();
+        Instant now = Timestamps.now();
         this.createdAt = now;
         this.updatedAt = now;
     }
 
     @PreUpdate
     void onUpdate() {
-        this.updatedAt = Instant.now();
+        this.updatedAt = Timestamps.now();
     }
 
     public void updateDetails(String name, String description, long basePrice) {

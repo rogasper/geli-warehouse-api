@@ -2,6 +2,8 @@ package com.geli.warehouse.model;
 
 import jakarta.persistence.*;
 
+import com.geli.warehouse.util.Timestamps;
+
 import java.time.Instant;
 
 @Entity
@@ -47,7 +49,7 @@ public class StockMovement {
 
     @PrePersist
     void onCreate(){
-        this.createdAt = Instant.now();
+        this.createdAt = Timestamps.now();
     }
 
     public Long getId() {

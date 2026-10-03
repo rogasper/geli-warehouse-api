@@ -2,6 +2,8 @@ package com.geli.warehouse.model;
 
 import jakarta.persistence.*;
 
+import com.geli.warehouse.util.Timestamps;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +30,7 @@ public class Sale {
 
     @PrePersist
     void onCreate(){
-        this.createdAt = Instant.now();
+        this.createdAt = Timestamps.now();
     }
 
     public void addLine(Variant variant, int quantity, long unitPrice){
