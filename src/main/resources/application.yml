@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: warehouse-api
+
+  datasource:
+    # The SQLite file lives in the project root. URL parameters:
+    #  - foreign_keys=on : SQLite enforces FK constraints only when asked
+    #  - busy_timeout    : wait (ms) for a lock instead of failing immediately
+    #  - journal_mode    : WAL allows readers while a writer is active
+    url: jdbc:sqlite:./warehouse.db?foreign_keys=on&busy_timeout=10000&journal_mode=WAL
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      # SQLite allows a single writer at a time; a small pool is plenty here.
+      maximum-pool-size: 5
+
+  jpa:
+    # The schema is owned by sql/01-schema.sql, not by Hibernate.
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
+        format_sql: true
+    # Do not keep a JPA session open for the whole HTTP request.
+    open-in-view: false
+
+  sql:
+    init:
+      # Run sql/schema + sql/seed on every start. Both scripts are idempotent.
+      mode: always
+      schema-locations: file:./sql/01-schema.sql
+      data-locations: file:./sql/02-seed.sql
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+
+logging:
+  level:
+    org.hibernate.SQL: debug
