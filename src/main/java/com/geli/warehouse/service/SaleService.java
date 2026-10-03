@@ -28,16 +28,37 @@ public class SaleService {
     private final SaleLineRepository saleLineRepository;
     private final VariantRepository variantRepository;
     private final StockLedgerService stockLedgerService;
+    private final IdempotencyService idempotencyService;
 
-    public SaleService(SaleRepository saleRepository, SaleLineRepository saleLineRepository, VariantRepository variantRepository, StockLedgerService stockLedgerService) {
+    public SaleService(SaleRepository saleRepository, SaleLineRepository saleLineRepository, VariantRepository variantRepository, StockLedgerService stockLedgerService, IdempotencyService idempotencyService) {
         this.saleRepository = saleRepository;
         this.saleLineRepository = saleLineRepository;
         this.variantRepository = variantRepository;
         this.stockLedgerService = stockLedgerService;
+        this.idempotencyService = idempotencyService;
     }
 
     @Transactional
-    public SaleResponse create(SaleCreateRequest request){
+    public CreateResult create(SaleCreateRequest request, String idempotencyKey){
+        if(idempotencyKey == null || idempotencyKey.isBlank()){
+            return new CreateResult(201, doCreate(request), false);
+        }
+
+        String fingerprint = idempotencyService.fingerprint(request);
+        Optional<IdempotencyService.StoredResponse> stored = idempotencyService.claim(idempotencyKey, fingerprint);
+
+        if(stored.isPresent()) {
+            IdempotencyService.StoredResponse replay = stored.get();
+            return new CreateResult(replay.status(), idempotencyService.parse(replay.body(), SaleResponse.class), true);
+        }
+        SaleResponse response = doCreate(request);
+        idempotencyService.complete(idempotencyKey, 201, response, response.id());
+        return new CreateResult(201, response, false);
+    }
+
+    public record CreateResult(int status, SaleResponse sale, boolean replayed){}
+
+    private SaleResponse doCreate(SaleCreateRequest request){
         List<SaleLineRequest> lines = request.lines().stream()
                 .sorted(Comparator.comparing(SaleLineRequest::variantId))
                 .toList();

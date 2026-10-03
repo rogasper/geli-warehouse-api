@@ -7,10 +7,9 @@ import com.geli.warehouse.service.SaleService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.net.URI;
 
 @RestController
 @RequestMapping("/api/v1/sales")
@@ -23,9 +22,16 @@ public class SaleController {
     }
 
     @PostMapping
-    public ResponseEntity<SaleResponse> create(@Valid @RequestBody SaleCreateRequest request){
-        SaleResponse created = saleService.create(request);
-        return ResponseEntity.created(URI.create("/api/v1/sales/" + created.id())).body(created);
+    public ResponseEntity<SaleResponse> create(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody SaleCreateRequest request){
+        SaleService.CreateResult result = saleService.create(request, idempotencyKey);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(result.status())
+                .header(HttpHeaders.LOCATION, "/api/v1/sales/" + result.sale().id());
+        if(result.replayed()){
+            response.header("Idempotency-Replayed", "true");
+        }
+        return response.body(result.sale());
     }
 
     @GetMapping
