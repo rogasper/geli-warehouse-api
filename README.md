@@ -16,6 +16,7 @@ ledger in the same transaction. See [Design decisions](#design-decisions).
 - [Requirements](#requirements)
 - [How to run](#how-to-run)
 - [API reference](#api-reference)
+- [Key flows](#key-flows)
 - [Data model](#data-model)
 - [Design decisions](#design-decisions)
 - [Assumptions](#assumptions)
@@ -192,6 +193,108 @@ Soft delete an item (it disappears from the default listing, history stays):
 ```bash
 curl -i -X DELETE http://localhost:8080/api/v1/items/4
 curl "http://localhost:8080/api/v1/items?active=false"
+```
+
+## Key flows
+
+### Creating a sale (happy path, with `Idempotency-Key`)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant CT as SaleController
+    participant SS as SaleService
+    participant IS as IdempotencyService
+    participant SL as StockLedgerService
+    participant DB as SQLite
+
+    C->>CT: POST /api/v1/sales<br/>Idempotency-Key + lines
+    CT->>SS: create(request, key)
+    SS->>IS: claim(key, fingerprint(request))
+    IS->>DB: INSERT idempotency_keys ... ON CONFLICT DO NOTHING
+    DB-->>IS: 1 row -> key claimed
+    SS->>DB: INSERT sales + sale_lines (saveAndFlush)
+    loop every line, sorted by variantId
+        SS->>SL: applyDelta(variantId, -quantity, SALE, saleId)
+        SL->>DB: UPDATE variants SET stock = stock - :qty<br/>WHERE id = :id AND stock >= :qty
+        DB-->>SL: 1 row updated
+        SL->>DB: INSERT stock_movements (stock_after)
+    end
+    SS->>IS: complete(key, 201, response, saleId)
+    IS->>DB: UPDATE idempotency_keys (response snapshot)
+    Note over SS,DB: one transaction - key, sale, stock and ledger commit together
+    SS-->>CT: CreateResult(201, sale, replayed = false)
+    CT-->>C: 201 Created + Location + body
+```
+
+### Duplicate request: replay or conflict
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client (retry)
+    participant SS as SaleService
+    participant IS as IdempotencyService
+    participant DB as SQLite
+
+    C->>SS: POST /api/v1/sales (same key, same body)
+    SS->>IS: claim(key, fingerprint)
+    IS->>DB: INSERT idempotency_keys ... ON CONFLICT DO NOTHING
+    DB-->>IS: 0 rows -> the key already exists
+    IS->>DB: SELECT idempotency_keys WHERE key = ?
+    alt same payload, request already completed
+        DB-->>IS: stored status + response body
+        IS-->>SS: stored response
+        SS-->>C: 201 Created + Idempotency-Replayed: true<br/>same sale id, stock NOT decremented again
+    else same key, different payload
+        IS-->>SS: IdempotencyConflictException
+        SS-->>C: 409 IDEMPOTENCY_KEY_REUSED
+    end
+```
+
+### Insufficient stock: the whole sale rolls back
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant SS as SaleService
+    participant SL as StockLedgerService
+    participant DB as SQLite
+
+    C->>SS: POST /api/v1/sales [line A: qty 1, line B: qty 1]
+    SS->>DB: INSERT sales + sale_lines (not committed yet)
+    SS->>SL: applyDelta(A, -1)
+    SL->>DB: UPDATE variants ... WHERE stock >= 1
+    DB-->>SL: 1 row (A: 3 -> 2)
+    SL->>DB: INSERT stock_movements for A
+    SS->>SL: applyDelta(B, -1)
+    SL->>DB: UPDATE variants ... WHERE stock >= 1
+    DB-->>SL: 0 rows (B has stock 0)
+    SS->>SS: throw InsufficientStockException
+    Note over SS,DB: the transaction rolls back - the sale INSERT,<br/>A's stock change and A's ledger row all disappear
+    SS-->>C: 409 INSUFFICIENT_STOCK (with details per line)
+```
+
+### Concurrent sales never oversell
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Request A
+    participant B as Request B
+    participant DB as SQLite (one writer at a time)
+
+    Note over A,B: 20 requests hit POST /sales for a variant with stock 5
+    A->>DB: BEGIN IMMEDIATE (write lock taken up front)
+    B->>DB: BEGIN IMMEDIATE (waits for the lock, busy_timeout)
+    A->>DB: UPDATE variants SET stock = stock - 1 WHERE stock >= 1
+    DB-->>A: 1 row -> sale created, ledger written, COMMIT
+    DB-->>B: lock acquired, its own UPDATE runs
+    B->>DB: UPDATE variants SET stock = stock - 1 WHERE stock >= 1
+    DB-->>B: 1 row while stock remains, 0 rows once it reaches 0
+    Note over DB: exactly 5 requests succeed (201), the other 15 get 0 rows -> 409, final stock 0
 ```
 
 ## Data model
