@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ItemApiIntegrationTest {
     private static final String DATABASE_URL =
             "jdbc:sqlite:./target/test-item-api-" + UUID.randomUUID()
-            + ".db?foreign_keys=on&busy_timeout=1000&journal_mode=WAL";
+            + ".db?foreign_keys=on&busy_timeout=1000&journal_mode=WAL&transaction_mode=IMMEDIATE";
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry registry){
