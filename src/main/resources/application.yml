@@ -7,7 +7,12 @@ spring:
     #  - foreign_keys=on : SQLite enforces FK constraints only when asked
     #  - busy_timeout    : wait (ms) for a lock instead of failing immediately
     #  - journal_mode    : WAL allows readers while a writer is active
-    url: jdbc:sqlite:./warehouse.db?foreign_keys=on&busy_timeout=10000&journal_mode=WAL
+    #  - transaction_mode=IMMEDIATE : take the write lock when the transaction
+    #    starts. Without it, a transaction that reads first and writes later
+    #    fails at once with SQLITE_BUSY (SQLite never calls the busy handler on
+    #    a lock upgrade), so concurrent sales would return 500 instead of
+    #    queueing.
+    url: jdbc:sqlite:./warehouse.db?foreign_keys=on&busy_timeout=10000&journal_mode=WAL&transaction_mode=IMMEDIATE
     driver-class-name: org.sqlite.JDBC
     hikari:
       # SQLite allows a single writer at a time; a small pool is plenty here.
